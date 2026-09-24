@@ -2,7 +2,7 @@
 
 ## RTX 4090 GPU Support
 
-This build includes **CUDA 12.4** and **PyTorch cu124** wheels, optimized for NVIDIA Ada Lovelace architecture (RTX 4090).
+This build includes the **CUDA 12.5 toolkit/driver** (nearest release NVIDIA still publishes for older pins — see the comment in `Dockerfile`) and **PyTorch cu124** wheels, optimized for NVIDIA Ada Lovelace architecture (RTX 4090). The PyTorch wheels bundle their own CUDA runtime, so they don't need to match the system toolkit version exactly.
 
 ### Verify GPU is Working
 
@@ -15,7 +15,7 @@ ssh root@comfyui-server
 nvidia-smi
 
 # Should show:
-# | NVIDIA-SMI 550.xx    Driver Version: 550.xx    CUDA Version: 12.4
+# | NVIDIA-SMI 555.xx    Driver Version: 555.xx    CUDA Version: 12.5
 # | RTX 4090 with 24GB VRAM
 
 # Check PyTorch CUDA support
@@ -30,7 +30,7 @@ python3 -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
 
 ```bash
 # Reinstall NVIDIA driver (if needed)
-apt-get install --reinstall -y nvidia-driver-550
+apt-get install --reinstall -y nvidia-driver-555
 
 # Verify CUDA installation
 nvcc --version

@@ -5,7 +5,7 @@ Automated GitHub Actions workflow to build a bootable USB with ComfyUI optimized
 ## Features
 
 ✅ **RTX 4090 Optimized**
-- CUDA 12.4 (Ada Lovelace)
+- CUDA 12.5 toolkit/driver + PyTorch cu124 wheels (Ada Lovelace)
 - PyTorch cu124 wheels
 - `--highvram` mode (keeps all models in 24GB VRAM)
 - FP8 quantization support for Flux
@@ -320,7 +320,7 @@ comfyui-rtx4090-builder/
 ├── .github/
 │   └── workflows/
 │       └── build-image.yml          # GitHub Actions (build-image-rtx4090.yml)
-├── Dockerfile                        # Ubuntu 24.04 + ComfyUI + CUDA 12.4 + WiFi
+├── Dockerfile                        # Ubuntu 24.04 + ComfyUI + CUDA 12.5 + WiFi
 ├── README-RTX4090.md                # This file
 ├── WIFI_AND_GPU_SETUP.md            # Detailed guides
 ├── LICENSE

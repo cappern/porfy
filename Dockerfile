@@ -31,18 +31,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     network-manager \
     && rm -rf /var/lib/apt/lists/*
 
-# NVIDIA driver + CUDA 12.4 (Ada Lovelace / RTX 4090) via NVIDIA's official
-# apt repo — see https://developer.nvidia.com/cuda-12-4-0-download-archive
+# NVIDIA driver + CUDA toolkit (Ada Lovelace / RTX 4090) via NVIDIA's official
+# apt repo. NVIDIA prunes older point releases from this repo over time —
+# 12.4 is gone as of this writing, so we pin the nearest release still
+# published (12.5 / driver 555). Check what's currently available with:
+#   curl -s https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/Packages.gz | gunzip | grep '^Package: cuda-toolkit-12'
+# The PyTorch wheels below stay on the cu124 build regardless — they bundle
+# their own CUDA runtime and only need a driver new enough to support it,
+# which 555 comfortably is.
 RUN curl -fsSL -o /tmp/cuda-keyring.deb \
     https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb && \
     dpkg -i /tmp/cuda-keyring.deb && rm -f /tmp/cuda-keyring.deb && \
     apt-get update && apt-get install -y --no-install-recommends \
-    nvidia-driver-550 \
-    cuda-toolkit-12-4 \
+    nvidia-driver-555 \
+    cuda-toolkit-12-5 \
     && rm -rf /var/lib/apt/lists/*
 
-ENV PATH="/usr/local/cuda-12.4/bin:${PATH}"
-ENV LD_LIBRARY_PATH="/usr/local/cuda-12.4/lib64:${LD_LIBRARY_PATH}"
+ENV PATH="/usr/local/cuda-12.5/bin:${PATH}"
+ENV LD_LIBRARY_PATH="/usr/local/cuda-12.5/lib64"
 
 # live-boot teaches this kernel's initramfs how to boot from a squashfs on
 # removable media (boot=live) — see .github/workflows/build-image-rtx4090.yml,
