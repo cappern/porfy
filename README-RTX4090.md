@@ -17,8 +17,8 @@ Automated GitHub Actions workflow to build a bootable USB with ComfyUI optimized
 - mDNS hostname resolution
 
 ✅ **Minimal & Fast**
-- Alpine Linux (~100MB)
-- Boots in <30 seconds
+- Ubuntu 24.04 live image (squashfs)
+- Boots in <60 seconds
 - No GUI overhead
 - SSH ready
 
@@ -201,7 +201,7 @@ Set up Caddy reverse proxy:
 
 ```bash
 ssh root@comfyui-server
-apk add caddy
+apt-get install -y caddy
 
 # Configure /etc/caddy/Caddyfile
 # (See detailed guide in WIFI_AND_GPU_SETUP.md)
@@ -320,7 +320,7 @@ comfyui-rtx4090-builder/
 ├── .github/
 │   └── workflows/
 │       └── build-image.yml          # GitHub Actions (build-image-rtx4090.yml)
-├── Dockerfile                        # Alpine + ComfyUI + CUDA 12.4 + WiFi
+├── Dockerfile                        # Ubuntu 24.04 + ComfyUI + CUDA 12.4 + WiFi
 ├── README-RTX4090.md                # This file
 ├── WIFI_AND_GPU_SETUP.md            # Detailed guides
 ├── LICENSE
@@ -340,7 +340,7 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-This automatically uploads `.iso.gz` and `.img.gz` to GitHub Releases.
+This automatically uploads `.iso.gz` (a hybrid ISO/USB image) to GitHub Releases.
 
 Or trigger manually:
 ```bash
@@ -361,7 +361,7 @@ Or trigger manually:
 
 2. **Setup firewall**
    ```bash
-   apk add ufw
+   apt-get install -y ufw
    ufw enable
    ufw allow 8188/tcp
    ufw deny 22  # or allow from specific IP
@@ -369,8 +369,7 @@ Or trigger manually:
 
 3. **Disable SSH if not needed**
    ```bash
-   systemctl disable sshd
-   systemctl stop sshd
+   systemctl disable --now ssh
    ```
 
 4. **Setup reverse proxy with auth** (see WIFI_AND_GPU_SETUP.md)
@@ -421,7 +420,7 @@ A: Yes, with the security steps applied (see Security section).
 - **ComfyUI Issues**: https://github.com/comfyanonymous/ComfyUI/issues
 - **This Repo**: GitHub Issues tab
 - **NVIDIA Drivers**: https://www.nvidia.com/Download/
-- **Alpine Linux**: https://alpinelinux.org/
+- **Ubuntu**: https://ubuntu.com/
 
 ---
 

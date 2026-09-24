@@ -1,29 +1,55 @@
-FROM alpine:latest
+# Ubuntu 24.04 (Noble) base — needed for real systemd, official NVIDIA/CUDA apt
+# repos, and DKMS support. Alpine cannot supply any of these three things.
+FROM ubuntu:24.04
 
-# Installer base dependencies
-RUN apk add --no-cache \
-    python3 py3-pip py3-venv \
-    git curl wget ca-certificates \
-    gcc g++ make cmake \
-    openssl-dev libffi-dev \
-    linux-lts linux-firmware-nvidia \
-    grub grub-bios syslinux xorriso \
+# bash (not the default dash) so brace expansion below (models/{checkpoints,...})
+# actually creates six directories instead of one literally-named one.
+SHELL ["/bin/bash", "-c"]
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Base dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-venv \
+    git curl wget gnupg ca-certificates \
+    build-essential cmake \
+    libssl-dev libffi-dev \
     e2fsprogs dosfstools \
-    openssh openrc \
-    bash
+    openssh-server \
+    && rm -rf /var/lib/apt/lists/*
+
+# Live-boot kernel + headers. Installed *before* the NVIDIA driver so DKMS
+# builds the nvidia.ko module against this exact kernel during postinst.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    linux-image-generic linux-headers-generic linux-firmware \
+    && rm -rf /var/lib/apt/lists/*
 
 # WiFi & Network support
-RUN apk add --no-cache \
-    wpa_supplicant wireless-tools \
-    dhcp dhclient \
-    iw iproute2 \
-    busybox-extras \
-    networkmanager networkmanager-openrc
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wpasupplicant wireless-tools iw \
+    isc-dhcp-client iproute2 net-tools \
+    network-manager \
+    && rm -rf /var/lib/apt/lists/*
 
-# NVIDIA CUDA 12.4+ support for RTX 4090 (Ada Lovelace)
-RUN apk add --no-cache \
-    nvidia-driver-open nvidia-utils \
-    cuda-toolkit-12.4
+# NVIDIA driver + CUDA 12.4 (Ada Lovelace / RTX 4090) via NVIDIA's official
+# apt repo — see https://developer.nvidia.com/cuda-12-4-0-download-archive
+RUN curl -fsSL -o /tmp/cuda-keyring.deb \
+    https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb && \
+    dpkg -i /tmp/cuda-keyring.deb && rm -f /tmp/cuda-keyring.deb && \
+    apt-get update && apt-get install -y --no-install-recommends \
+    nvidia-driver-550 \
+    cuda-toolkit-12-4 \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PATH="/usr/local/cuda-12.4/bin:${PATH}"
+ENV LD_LIBRARY_PATH="/usr/local/cuda-12.4/lib64:${LD_LIBRARY_PATH}"
+
+# live-boot teaches this kernel's initramfs how to boot from a squashfs on
+# removable media (boot=live) — see .github/workflows/build-image-rtx4090.yml,
+# which packs this rootfs into /live/filesystem.squashfs on the ISO/USB.
+RUN apt-get update && apt-get install -y --no-install-recommends live-boot && \
+    rm -rf /var/lib/apt/lists/* && \
+    update-initramfs -u -k all
 
 # Setup ComfyUI
 WORKDIR /opt/comfyui
@@ -31,12 +57,12 @@ RUN git clone https://github.com/comfyanonymous/ComfyUI.git . && \
     python3 -m venv venv && \
     . venv/bin/activate && \
     pip install --upgrade pip wheel setuptools && \
-    # CUDA 12.4 with ROCm fallback
+    # CUDA 12.4 PyTorch wheels
     pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124 && \
     # Install ComfyUI dependencies
     pip install -r requirements.txt 2>&1 | tail -20
 
-# Create systemd service (more portable than OpenRC for this use case)
+# Create systemd service
 RUN mkdir -p /etc/systemd/system && \
     cat > /etc/systemd/system/comfyui.service <<'SERVICEEOF'
 [Unit]
@@ -60,13 +86,15 @@ StandardError=journal
 WantedBy=multi-user.target
 SERVICEEOF
 
-# Enable ComfyUI on boot
-RUN ln -s /etc/systemd/system/comfyui.service /etc/systemd/system/multi-user.target.wants/comfyui.service
-
-# Network Manager startup
+# Enable ComfyUI on boot (no running systemd inside the build container, so
+# `systemctl enable` isn't available — symlink it directly instead).
 RUN mkdir -p /etc/systemd/system/multi-user.target.wants && \
-    ln -s /usr/lib/systemd/system/networkmanager.service \
-         /etc/systemd/system/multi-user.target.wants/networkmanager.service || true
+    ln -s /etc/systemd/system/comfyui.service \
+          /etc/systemd/system/multi-user.target.wants/comfyui.service
+
+# network-manager and openssh-server enable themselves via their own
+# postinst scripts (deb-systemd-helper) when installed with apt above —
+# no manual symlink needed for those two.
 
 # WiFi Configuration - WPA2 supplicant
 RUN mkdir -p /etc/wpa_supplicant && \
@@ -119,9 +147,11 @@ echo "ComfyUI running at: http://$(ip addr show wlan0 | grep 'inet ' | awk '{pri
 SETUPEOF
 
 # Boot script that configures WiFi if not already connected
-RUN cat > /etc/systemd/system-preset/80-comfyui.preset <<'PRESETEOF'
+RUN mkdir -p /etc/systemd/system-preset && \
+    cat > /etc/systemd/system-preset/80-comfyui.preset <<'PRESETEOF'
 enable comfyui.service
-enable networkmanager.service
+enable NetworkManager.service
+enable ssh.service
 PRESETEOF
 
 # Start script for first-time WiFi setup
@@ -147,8 +177,9 @@ RUN echo "comfyui-server" > /etc/hostname
 # Root password - CHANGE THIS!
 RUN echo "root:comfyui" | chpasswd
 
-# Enable SSH for remote access
-RUN ssh-keygen -A
+# Enable SSH for remote access, allow root login with password (live/appliance image)
+RUN ssh-keygen -A && \
+    sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
 
 # Prepare ComfyUI models directory structure
 RUN mkdir -p /opt/comfyui/models/{checkpoints,loras,vae,embeddings,controlnet,upscale_models} && \
@@ -166,7 +197,7 @@ echo "=== GPU Check ==="
 nvidia-smi
 echo ""
 echo "=== CUDA Info ==="
-python3 -c "import torch; print(f'CUDA Available: {torch.cuda.is_available()}'); print(f'GPU Count: {torch.cuda.device_count()}'); print(f'GPU 0: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else \"N/A\"}')"
+/opt/comfyui/venv/bin/python -c "import torch; print(f'CUDA Available: {torch.cuda.is_available()}'); print(f'GPU Count: {torch.cuda.device_count()}'); print(f'GPU 0: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else \"N/A\"}')"
 GPUEOF
 
 EXPOSE 8188 22

@@ -43,7 +43,7 @@ git push origin main
 2. Scroll to **Artifacts** section
 3. Download `comfyui-usb-images`
 4. Extract the ZIP file
-5. You now have `.iso.gz` and `.img.gz`
+5. You now have `.iso.gz` — a single hybrid image, `dd`-able straight to a USB stick
 
 ## Step 5: Write to USB (1 min)
 
@@ -107,8 +107,8 @@ After boot:
 ## Troubleshooting Quick Tips
 
 **Image won't boot?**
-- Try writing ISO instead of IMG
 - Make sure USB is fully unmounted before writing
+- Re-`dd` the image; a partial/interrupted write is the most common cause
 
 **Can't access web UI?**
 - Check server IP: `ip addr show`

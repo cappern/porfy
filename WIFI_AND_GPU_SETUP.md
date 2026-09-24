@@ -29,8 +29,8 @@ python3 -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
 ### If GPU Not Detected
 
 ```bash
-# Reinstall NVIDIA drivers (if needed)
-apk add --no-cache nvidia-driver-open
+# Reinstall NVIDIA driver (if needed)
+apt-get install --reinstall -y nvidia-driver-550
 
 # Verify CUDA installation
 nvcc --version
@@ -207,7 +207,7 @@ iw dev wlan0 scan | grep "SSID:"
 wpa_cli -i wlan0 status
 
 # Restart network manager
-systemctl restart networkmanager
+systemctl restart NetworkManager
 
 # Manual connection attempt
 wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant/wpa_supplicant-wlan0.conf
@@ -250,10 +250,10 @@ python main.py --listen 0.0.0.0 --port 8188 --highvram
 
 ```bash
 # Check SSH is running
-systemctl status sshd
+systemctl status ssh
 
 # Start if needed
-systemctl start sshd
+systemctl start ssh
 
 # Verify port 22 open
 ss -tlnp | grep 22
@@ -289,7 +289,7 @@ Access by hostname instead of IP:
 
 ```bash
 # Install mDNS (avahi)
-apk add --no-cache avahi avahi-tools
+apt-get install -y avahi-daemon avahi-utils
 
 # Enable at boot
 systemctl enable avahi-daemon
@@ -305,7 +305,7 @@ If accessing from outside your network:
 
 ```bash
 # Install Caddy reverse proxy
-apk add --no-cache caddy
+apt-get install -y caddy
 
 # Configure /etc/caddy/Caddyfile
 # See README.md for production setup
@@ -342,12 +342,12 @@ If OOM errors occur:
 
 2. **Disable SSH if not needed**
    ```bash
-   systemctl disable sshd
+   systemctl disable --now ssh
    ```
 
 3. **Setup firewall**
    ```bash
-   apk add --no-cache ufw
+   apt-get install -y ufw
    ufw enable
    ufw allow 8188/tcp
    ufw deny 22/tcp  # Or allow only from your IP
