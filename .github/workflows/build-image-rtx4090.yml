@@ -1,0 +1,262 @@
+name: Build ComfyUI USB/ISO for RTX 4090 + WiFi
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Create a GitHub Release'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image (RTX 4090 + WiFi)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          load: true
+          tags: comfyui-rtx4090:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Export Docker container filesystem
+        run: |
+          echo "Starting container export..."
+          docker run --privileged --name comfyui-export -d comfyui-rtx4090:latest sleep infinity
+
+          echo "Exporting filesystem..."
+          docker export comfyui-export > rootfs.tar
+
+          echo "Extracting tarball..."
+          mkdir -p rootfs
+          tar -xf rootfs.tar -C rootfs/
+
+          echo "Cleaning up..."
+          docker stop comfyui-export
+          docker rm comfyui-export
+
+          echo "Filesystem ready: $(du -sh rootfs | awk '{print $1}')"
+
+      - name: Create bootable ISO
+        run: |
+          echo "Creating ISO directories..."
+          mkdir -p iso/boot/grub
+
+          # Copy kernel and initramfs from rootfs
+          if [ -f rootfs/boot/vmlinuz-lts ]; then
+            echo "Copying kernel..."
+            cp rootfs/boot/vmlinuz-lts iso/boot/vmlinuz
+          else
+            echo "Warning: vmlinuz-lts not found, trying alternatives..."
+            find rootfs/boot -name "vmlinuz*" -type f | head -1 | xargs -I {} cp {} iso/boot/vmlinuz || echo "No kernel found"
+          fi
+
+          if [ -f rootfs/boot/initramfs-lts ]; then
+            echo "Copying initramfs..."
+            cp rootfs/boot/initramfs-lts iso/boot/initramfs.img
+          else
+            echo "Warning: initramfs-lts not found, trying alternatives..."
+            find rootfs/boot -name "initramfs*" -type f | head -1 | xargs -I {} cp {} iso/boot/initramfs.img || echo "No initramfs found"
+          fi
+
+          echo "Creating GRUB configuration..."
+          cat > iso/boot/grub/grub.cfg <<'EOF'
+          set default=0
+          set timeout=10
+
+          menuentry "ComfyUI Server (RTX 4090 + WiFi)" {
+              linux /boot/vmlinuz root=live:CDLABEL=COMFYUI ro quiet
+              initrd /boot/initramfs.img
+          }
+
+          menuentry "ComfyUI Server (Verbose)" {
+              linux /boot/vmlinuz root=live:CDLABEL=COMFYUI ro
+              initrd /boot/initramfs.img
+          }
+
+          menuentry "ComfyUI Server (Single User)" {
+              linux /boot/vmlinuz root=live:CDLABEL=COMFYUI ro single
+              initrd /boot/initramfs.img
+          }
+          EOF
+
+          echo "Creating ISO image..."
+          xorrisofs -iso-level 3 \
+            -full-iso9660-filenames \
+            -volid "COMFYUI" \
+            -eltorito-boot boot/grub/eltorito.img \
+            -eltorito-platform efi \
+            -no-pad \
+            -output comfyui-rtx4090.iso \
+            iso/ 2>&1 | tail -20
+
+          echo "ISO created: $(ls -lh comfyui-rtx4090.iso | awk '{print $5}')"
+
+      - name: Create bootable USB disk image
+        run: |
+          echo "Creating 16GB disk image..."
+          dd if=/dev/zero of=comfyui-rtx4090.img bs=1M count=16384 status=progress
+
+          echo "Formatting with ext4..."
+          mkfs.ext4 -F comfyui-rtx4090.img -L COMFYUI
+
+          echo "Mounting image..."
+          mkdir -p mnt
+          sudo mount -o loop comfyui-rtx4090.img mnt
+
+          echo "Copying rootfs to image..."
+          sudo cp -av rootfs/* mnt/ 2>&1 | grep -E "^|directories|files" | tail -5
+
+          echo "Creating GRUB config for USB..."
+          sudo mkdir -p mnt/boot/grub
+          sudo tee mnt/boot/grub/grub.cfg > /dev/null <<'EOF'
+          set default=0
+          set timeout=10
+
+          menuentry "ComfyUI RTX 4090" {
+              linux /boot/vmlinuz-lts root=/dev/sda1 rw quiet
+              initrd /boot/initramfs-lts
+          }
+          EOF
+
+          echo "Syncing filesystem..."
+          sudo sync
+
+          echo "Unmounting..."
+          sudo umount mnt
+          rmdir mnt
+
+          echo "Disk image ready: $(ls -lh comfyui-rtx4090.img | awk '{print $5}')"
+
+      - name: Compress images
+        run: |
+          echo "Compressing ISO..."
+          gzip -v comfyui-rtx4090.iso
+
+          echo "Compressing disk image..."
+          gzip -v comfyui-rtx4090.img
+
+          echo "Files ready:"
+          ls -lh comfyui-rtx4090.* | awk '{print $9, $5}'
+
+      - name: Upload to Actions Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: comfyui-rtx4090-usb-images
+          path: |
+            comfyui-rtx4090.iso.gz
+            comfyui-rtx4090.img.gz
+          retention-days: 30
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        if: github.event.inputs.release == 'true' || startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            comfyui-rtx4090.iso.gz
+            comfyui-rtx4090.img.gz
+          draft: false
+          prerelease: startsWith(github.ref, 'refs/tags/') && contains(github.ref, 'beta')
+          body: |
+            # ComfyUI RTX 4090 WiFi Boot Image
+
+            **Build Date:** ${{ github.event.head_commit.timestamp }}
+            **GPU:** NVIDIA RTX 4090 (Ada Lovelace)
+            **Network:** WiFi + Ethernet support
+
+            ## Downloads
+
+            - **comfyui-rtx4090.iso.gz** - Bootable ISO (recommended)
+            - **comfyui-rtx4090.img.gz** - Raw USB disk image (16GB)
+
+            ## Quick Start
+
+            ### macOS/Linux
+            ```bash
+            gunzip comfyui-rtx4090.iso.gz
+            diskutil list                    # Find USB device
+            diskutil unmountDisk /dev/diskX
+            sudo dd if=comfyui-rtx4090.iso of=/dev/rdiskX bs=4m
+            ```
+
+            ### Windows
+            1. Extract .iso.gz with 7-Zip or WinRAR
+            2. Download [Balena Etcher](https://www.balena.io/etcher/)
+            3. Write ISO to USB
+
+            ## What's Inside
+
+            ✅ Alpine Linux (lightweight, ~120MB)
+            ✅ ComfyUI latest
+            ✅ NVIDIA CUDA 12.4 (RTX 4090 optimized)
+            ✅ PyTorch cu124 wheels
+            ✅ WPA2 WiFi support (wpa_supplicant + NetworkManager)
+            ✅ SSH enabled
+            ✅ Auto-start ComfyUI on boot
+
+            ## First Boot
+
+            1. **Boot from USB** → wait 30-60 seconds
+            2. **Setup WiFi** → SSH and run `/usr/local/bin/setup-wifi.sh`
+            3. **Check GPU** → `ssh root@<ip>` then `nvidia-smi`
+            4. **Access UI** → http://<server-ip>:8188
+
+            ## Default Credentials
+            ```
+            Username: root
+            Password: comfyui
+            ```
+            ⚠️ **CHANGE IMMEDIATELY AFTER BOOT!**
+
+            ## Customize
+
+            Edit `Dockerfile` before pushing:
+            - WiFi SSID/password
+            - Root password
+            - ComfyUI flags (--highvram, etc)
+
+            ## Support
+
+            - 📖 See WIFI_AND_GPU_SETUP.md for detailed WiFi/GPU guide
+            - 🐛 Issues: Check journalctl logs on server
+            - 💬 ComfyUI Discord: https://discord.gg/comfyorg
+
+            ---
+
+            Generated with GitHub Actions on Christoffer's infrastructure ⚡
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Print Summary
+        run: |
+          echo "=========================================="
+          echo "✅ Build Complete!"
+          echo "=========================================="
+          echo ""
+          echo "Files:"
+          ls -lh comfyui-rtx4090.* | awk '{printf "  %s (%s)\n", $9, $5}'
+          echo ""
+          echo "Next steps:"
+          echo "  1. Download from Actions → Artifacts"
+          echo "  2. Extract .iso.gz file"
+          echo "  3. Write to USB with dd or Balena Etcher"
+          echo "  4. Boot server and setup WiFi"
+          echo ""
+          echo "Access: http://<server-ip>:8188"
+          echo "SSH: ssh root@<server-ip>"
+          echo "=========================================="

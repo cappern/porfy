@@ -1,0 +1,35 @@
+# Build artifacts
+*.iso
+*.iso.gz
+*.img
+*.img.gz
+*.tar
+rootfs.tar
+rootfs/
+iso/
+mnt/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary
+*.tmp
+*.log
