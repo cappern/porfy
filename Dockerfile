@@ -53,9 +53,19 @@ ENV LD_LIBRARY_PATH="/usr/local/cuda-12.5/lib64"
 # live-boot teaches this kernel's initramfs how to boot from a squashfs on
 # removable media (boot=live) — see .github/workflows/build-image-rtx4090.yml,
 # which packs this rootfs into /live/filesystem.squashfs on the ISO/USB.
+#
+# `update-initramfs -u -k all` can exit 0 without actually leaving a real
+# /boot/initrd.img-<ver> behind (only refreshing the dangling symlinks) —
+# seen in practice on this exact image. Pin the installed kernel version
+# explicitly, force a real rebuild against it, and hard-fail the build here
+# (cheap, ~1 layer) instead of 30+ minutes later in the ISO packaging step.
 RUN apt-get update && apt-get install -y --no-install-recommends live-boot && \
     rm -rf /var/lib/apt/lists/* && \
-    update-initramfs -u -k all
+    KVER="$(basename "$(ls -d /lib/modules/*-generic | sort -V | tail -1)")" && \
+    echo "Rebuilding initramfs for kernel: ${KVER}" && \
+    rm -f "/boot/initrd.img-${KVER}" && \
+    update-initramfs -c -k "${KVER}" && \
+    test -s "/boot/initrd.img-${KVER}" || (echo "initrd.img-${KVER} was not created" >&2 && exit 1)
 
 # Setup ComfyUI
 WORKDIR /opt/comfyui
