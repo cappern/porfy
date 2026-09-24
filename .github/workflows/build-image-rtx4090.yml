@@ -20,6 +20,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # This image (kernel + NVIDIA driver + CUDA toolkit + PyTorch) is large
+      # enough that the runner's default free disk (~14GB) isn't enough once
+      # you also need room for docker export + squashfs on top of it - hit
+      # "No space left on device" 9% into mksquashfs on run 36058400757.
+      # Reclaim space from preinstalled toolchains this job never uses.
+      - name: Free up runner disk space
+        run: |
+          echo "Before:" && df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+            /usr/local/share/powershell /usr/local/share/chromium /opt/hostedtoolcache/CodeQL \
+            /opt/az /usr/lib/jvm || true
+          sudo swapoff -a || true
+          sudo rm -f /mnt/swapfile || true
+          docker image prune -af || true
+          echo "After:" && df -h /
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -42,18 +58,20 @@ jobs:
           echo "Starting container export..."
           docker run --privileged --name comfyui-export -d comfyui-rtx4090:latest sleep infinity
 
-          echo "Exporting filesystem..."
-          docker export comfyui-export > rootfs.tar
-
-          echo "Extracting tarball..."
+          echo "Exporting + extracting filesystem (piped, no intermediate .tar on disk)..."
           mkdir -p rootfs
-          sudo tar -xpf rootfs.tar -C rootfs/ --same-owner
+          docker export comfyui-export | sudo tar -xp -C rootfs/ --same-owner
 
           echo "Cleaning up..."
           docker stop comfyui-export
           docker rm comfyui-export
+          # Drop the now-redundant image layers too - only the extracted
+          # rootfs/ is needed from here on, and disk is tight.
+          docker image rm comfyui-rtx4090:latest || true
+          docker builder prune -af || true
 
           echo "Filesystem ready: $(du -sh rootfs | awk '{print $1}')"
+          df -h /
 
       - name: Install ISO build tooling
         run: |
