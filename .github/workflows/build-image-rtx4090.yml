@@ -121,10 +121,14 @@ jobs:
           echo "Building hybrid ISO/USB image with grub-mkrescue..."
           # filesystem.squashfs is >4GiB (plain ISO9660's hard per-file
           # limit, "File exceeds size limit of 4294967295 bytes" on run
-          # 36061838538) - iso-level 3 turns on multi-extent files so
-          # xorriso can store it. Args after -- pass straight through to
-          # the underlying xorriso call.
-          grub-mkrescue -o comfyui-rtx4090.iso iso/ -- -iso-level 3
+          # 36061838538). Args after -- pass straight through to xorriso's
+          # NATIVE command syntax (grub-mkrescue doesn't invoke -as
+          # mkisofs), where there is no standalone -iso-level/-iso_level
+          # command at all (confirmed against the xorriso manual, after
+          # -iso-level errored as unknown on run 36066071891) - the actual
+          # native command is -compliance, and iso_9660_level=3 is one of
+          # its rule keywords.
+          grub-mkrescue -o comfyui-rtx4090.iso iso/ -- -compliance iso_9660_level=3
 
           echo "Image created: $(ls -lh comfyui-rtx4090.iso | awk '{print $5}')"
           echo "This single .iso is a hybrid image: burn it to optical media, or"
