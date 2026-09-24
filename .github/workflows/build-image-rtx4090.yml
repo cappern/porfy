@@ -31,8 +31,11 @@ jobs:
           push: false
           load: true
           tags: comfyui-rtx4090:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # GHA layer caching disabled while this Dockerfile is still being
+          # iterated on: a mode=max cache export/import for this multi-GB
+          # image (kernel + NVIDIA driver + CUDA toolkit + PyTorch) hung for
+          # 38+ minutes on run 36054049293 without erroring. Re-add once the
+          # file is stable if build time becomes worth optimizing.
 
       - name: Export Docker container filesystem
         run: |
