@@ -121,14 +121,27 @@ jobs:
           echo "Building hybrid ISO/USB image with grub-mkrescue..."
           # filesystem.squashfs is >4GiB (plain ISO9660's hard per-file
           # limit, "File exceeds size limit of 4294967295 bytes" on run
-          # 36061838538). Args after -- pass straight through to xorriso's
-          # NATIVE command syntax (grub-mkrescue doesn't invoke -as
-          # mkisofs), where there is no standalone -iso-level/-iso_level
-          # command at all (confirmed against the xorriso manual, after
-          # -iso-level errored as unknown on run 36066071891) - the actual
-          # native command is -compliance, and iso_9660_level=3 is one of
-          # its rule keywords.
-          grub-mkrescue -o comfyui-rtx4090.iso iso/ -- -compliance iso_9660_level=3
+          # 36061838538).
+          #
+          # Two earlier attempts both failed:
+          #  - `-- -iso-level 3`: `--` switches xorriso to native command
+          #    syntax, which has no such command (errored as unknown, run
+          #    36066071891).
+          #  - `-- -compliance iso_9660_level=3`: valid native syntax, but
+          #    still failed at the exact same graft (run 36070067004) -
+          #    grub-mkrescue's own add of the source tree already ran as
+          #    part of its base xorriso invocation, and native commands we
+          #    append after `--` only run *after* that, too late to matter.
+          #
+          # Dropping `--` entirely: without it, extra args go to xorriso's
+          # mkisofs-emulation mode (the default), which - like mkisofs
+          # itself - parses all options into settings before doing any
+          # tree-walking, so argv position doesn't matter the way it does
+          # for native commands. `-iso-level` is the mkisofs-emulation
+          # spelling (confirmed in the xorriso manual's own mkisofs-mode
+          # section) and is the fix multiple real-world reports of this
+          # exact grub-mkrescue error confirm.
+          grub-mkrescue -o comfyui-rtx4090.iso iso/ -iso-level 3
 
           echo "Image created: $(ls -lh comfyui-rtx4090.iso | awk '{print $5}')"
           echo "This single .iso is a hybrid image: burn it to optical media, or"
