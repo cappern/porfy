@@ -70,7 +70,8 @@ RUN mkdir -p /etc/systemd/system/multi-user.target.wants && \
 
 # WiFi Configuration - WPA2 supplicant
 RUN mkdir -p /etc/wpa_supplicant && \
-    cat > /etc/wpa_supplicant/wpa_supplicant-wlan0.conf <<'WIFIEOF'
+    cat > /etc/wpa_supplicant/wpa_supplicant-wlan0.conf <<'WIFIEOF' && \
+    chmod 600 /etc/wpa_supplicant/wpa_supplicant-wlan0.conf
 ctrl_interface=/run/wpa_supplicant
 update_config=1
 
@@ -81,10 +82,10 @@ update_config=1
 #     key_mgmt=WPA-PSK
 # }
 WIFIEOF
-    chmod 600 /etc/wpa_supplicant/wpa_supplicant-wlan0.conf
 
 # Boot setup script for WiFi interactive config
-RUN cat > /usr/local/bin/setup-wifi.sh <<'SETUPEOF'
+RUN cat > /usr/local/bin/setup-wifi.sh <<'SETUPEOF' && \
+    chmod +x /usr/local/bin/setup-wifi.sh
 #!/bin/bash
 
 echo "=== ComfyUI WiFi Setup ==="
@@ -116,7 +117,6 @@ ip addr show wlan0
 echo ""
 echo "ComfyUI running at: http://$(ip addr show wlan0 | grep 'inet ' | awk '{print $2}' | cut -d'/' -f1):8188"
 SETUPEOF
-    chmod +x /usr/local/bin/setup-wifi.sh
 
 # Boot script that configures WiFi if not already connected
 RUN cat > /etc/systemd/system-preset/80-comfyui.preset <<'PRESETEOF'
@@ -125,7 +125,8 @@ enable networkmanager.service
 PRESETEOF
 
 # Start script for first-time WiFi setup
-RUN cat > /usr/local/bin/comfyui-first-boot.sh <<'FIRSTBOOTEOF'
+RUN cat > /usr/local/bin/comfyui-first-boot.sh <<'FIRSTBOOTEOF' && \
+    chmod +x /usr/local/bin/comfyui-first-boot.sh
 #!/bin/bash
 
 if ! ip link show wlan0 | grep -q "UP"; then
@@ -139,7 +140,6 @@ systemctl is-active --quiet comfyui || systemctl start comfyui
 echo "ComfyUI Server Ready!"
 echo "Access at: http://$(hostname -I | awk '{print $1}'):8188"
 FIRSTBOOTEOF
-    chmod +x /usr/local/bin/comfyui-first-boot.sh
 
 # Set hostname
 RUN echo "comfyui-server" > /etc/hostname
@@ -159,7 +159,8 @@ RUN mkdir -p /var/log/comfyui && \
     touch /var/log/comfyui/comfyui.log
 
 # NVIDIA setup verification - test CUDA availability
-RUN cat > /usr/local/bin/check-gpu.sh <<'GPUEOF'
+RUN cat > /usr/local/bin/check-gpu.sh <<'GPUEOF' && \
+    chmod +x /usr/local/bin/check-gpu.sh
 #!/bin/bash
 echo "=== GPU Check ==="
 nvidia-smi
@@ -167,7 +168,6 @@ echo ""
 echo "=== CUDA Info ==="
 python3 -c "import torch; print(f'CUDA Available: {torch.cuda.is_available()}'); print(f'GPU Count: {torch.cuda.device_count()}'); print(f'GPU 0: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else \"N/A\"}')"
 GPUEOF
-    chmod +x /usr/local/bin/check-gpu.sh
 
 EXPOSE 8188 22
 
